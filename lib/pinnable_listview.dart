@@ -1,12 +1,17 @@
 library pinnable_listview;
+
 import 'package:flutter/material.dart';
 
 class PinnableListView extends StatefulWidget {
   final List<Widget> children;
   final int initiallyPinned;
   final PinController pinController;
-  PinnableListView({Key key, @required this.children, @required this.pinController,
-  this.initiallyPinned}) : super(key: key);
+  PinnableListView(
+      {Key key,
+      @required this.children,
+      @required this.pinController,
+      this.initiallyPinned})
+      : super(key: key);
 
   @override
   PinnableListViewState createState() => PinnableListViewState();
@@ -17,6 +22,7 @@ class PinnableListViewState extends State<PinnableListView> {
   List<Function> animFunctions = List();
   List<Function> pinFunctions = List();
   List<int> originalIndexes = List();
+  List<int> pinnedList = List();
 
   void addData(Function animFunction, Function pinFunction, GlobalKey key) {
     globalKeys.add(key);
@@ -25,7 +31,7 @@ class PinnableListViewState extends State<PinnableListView> {
   }
 
   Future<void> callFunctions(int index) async {
-    if (widget.pinController.pinned == null || index != 0) {
+    if (index != 0 && !pinnedList.contains(originalIndexes[index])) {
       animFunctions.sublist(0, index).forEach((function) {
         double widgetHeight = getWidgetHeight(index);
         function(widgetHeight, false);
@@ -44,35 +50,51 @@ class PinnableListViewState extends State<PinnableListView> {
         GlobalKey moveKey = globalKeys[index];
         globalKeys.removeAt(index);
         globalKeys.insert(0, moveKey);
+
+        pinnedList.add(moveIndex);
       });
     } else {
-      animFunctions.sublist(1, originalIndexes[index]+1).forEach((function) {
-        double widgetHeight = getWidgetHeight(index);
-        function(widgetHeight, true);
-      });
+      try {
+        animFunctions
+            .sublist(index + 1, originalIndexes[index] + 1)
+            .forEach((function) {
+          double widgetHeight = getWidgetHeight(index);
+          function(widgetHeight, true);
+        });
+      } catch (error) {
+        animFunctions
+            .sublist(index, originalIndexes[index])
+            .forEach((function) {
+          double widgetHeight = getWidgetHeight(index);
+          function(widgetHeight, true);
+        });
+      }
       await Future.delayed(Duration(milliseconds: 600));
       setState(() {
         widget.pinController.pinned = null;
-        int moveIndex = originalIndexes[0];
-        originalIndexes.removeAt(0);
+        int moveIndex = originalIndexes[index];
+        originalIndexes.removeAt(index);
         originalIndexes.insert(moveIndex, moveIndex);
 
-        Widget moveWidget = widget.children[0];
-        widget.children.removeAt(0);
+        Widget moveWidget = widget.children[index];
+        widget.children.removeAt(index);
         widget.children.insert(moveIndex, moveWidget);
 
-        GlobalKey moveKey = globalKeys[0];
-        globalKeys.removeAt(0);
+        GlobalKey moveKey = globalKeys[index];
+        globalKeys.removeAt(index);
         globalKeys.insert(moveIndex, moveKey);
+
+        pinnedList.remove(moveIndex);
       });
     }
   }
 
   double getData(int index) {
     double distance = 0.0;
-    if (widget.pinController.pinned == originalIndexes[index]) {
-      for (int i = 0; i < widget.pinController.pinned; i++) {
+    if (pinnedList.contains(originalIndexes[index])) {
+      for (int i = 0; i < originalIndexes[index] - index; i++) {
         distance -= getWidgetHeight(i);
+        // print(distance);
       }
     } else {
       for (int i = 0; i < index; i++) {
@@ -99,8 +121,12 @@ class PinnableListViewState extends State<PinnableListView> {
   }
 
   double getWidgetHeight(index) {
-    return globalKeys[index].currentContext.findRenderObject().paintBounds.height;
-}
+    return globalKeys[index]
+        .currentContext
+        .findRenderObject()
+        .paintBounds
+        .height;
+  }
 
   @override
   void initState() {
@@ -141,15 +167,23 @@ class PinWidget extends StatefulWidget {
   // widget used for pinnable listview to handle individual events on children
   final Widget child;
   final int index;
-  final Function(Function animFunction, Function pinFunction, GlobalKey key) addData;
+  final Function(Function animFunction, Function pinFunction, GlobalKey key)
+      addData;
   final Function(int index) callFunctions;
   final Function(int index) getData;
-  PinWidget({Key key, this.child, this.index, this.addData,
-    this.getData, this.callFunctions}): super(key: key);
+  PinWidget(
+      {Key key,
+      this.child,
+      this.index,
+      this.addData,
+      this.getData,
+      this.callFunctions})
+      : super(key: key);
   PinWidgetState createState() => PinWidgetState();
 }
 
-class PinWidgetState extends State<PinWidget> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+class PinWidgetState extends State<PinWidget>
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   AnimationController animationController;
   var tween;
   GlobalKey globalKey = GlobalKey(); // needed to get widget height
@@ -185,17 +219,10 @@ class PinWidgetState extends State<PinWidget> with SingleTickerProviderStateMixi
   @override
   void initState() {
     super.initState();
-    animationController = AnimationController(
-        vsync: this,
-        duration: Duration(milliseconds: 600)
-    );
-    tween = Tween(
-        begin: 0.0,
-        end: 1.0
-    ).animate(CurvedAnimation(
-        parent: animationController,
-        curve: Curves.ease
-    ));
+    animationController =
+        AnimationController(vsync: this, duration: Duration(milliseconds: 600));
+    tween = Tween(begin: 0.0, end: 1.0).animate(
+        CurvedAnimation(parent: animationController, curve: Curves.ease));
     storageKey = PageStorageKey(widget.index);
     widget.addData(move, pin, globalKey);
   }
@@ -213,8 +240,7 @@ class PinWidgetState extends State<PinWidget> with SingleTickerProviderStateMixi
                 offset: Offset(1.0, -distance * tween.value),
                 child: Container(
                   child: widget.child,
-                )
-            );
+                ));
           }),
     );
   }
